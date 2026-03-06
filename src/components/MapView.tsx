@@ -143,7 +143,7 @@ export default function MapView({ terminals, amapKey, amapSecurityCode }: Props)
     } else {
       mapRef.current.setFitView(markers, false, [50, 50, 50, 50]);
     }
-  }, [points]);
+  }, [points, isLoading]);
 
   if (!amapKey) {
     return (
