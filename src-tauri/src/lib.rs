@@ -3,6 +3,8 @@ use std::hash::{Hash, Hasher};
 
 use reqwest::StatusCode;
 use serde_json::json;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::{Emitter, Manager, State};
 
 /// Build a deterministic device ID from hostname + OS.
 /// The result is a hex string that stays the same across app restarts on the same machine.
@@ -23,6 +25,25 @@ fn build_device_id() -> String {
 #[tauri::command]
 fn get_device_id() -> String {
     build_device_id()
+}
+
+/// 关闭守卫：用于在完成清理后允许窗口真正关闭。
+struct CloseGuard(AtomicBool);
+
+impl CloseGuard {
+    fn allow_close(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    fn can_close(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+/// Tauri 命令：允许窗口关闭（用于前端完成离线写入后调用）。
+#[tauri::command]
+fn allow_app_close(state: State<'_, CloseGuard>) {
+    state.allow_close();
 }
 
 /// 记录日志前脱敏访问令牌，避免泄露。
@@ -166,13 +187,25 @@ async fn gitee_update_gist_file(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(CloseGuard(AtomicBool::new(false)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_geolocation::init())
         .invoke_handler(tauri::generate_handler![
             get_device_id,
+            allow_app_close,
             gitee_get_gist_file,
             gitee_update_gist_file
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let guard = window.app_handle().state::<CloseGuard>();
+                if guard.can_close() {
+                    return;
+                }
+                api.prevent_close();
+                let _ = window.emit("app-closing", ());
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

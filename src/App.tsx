@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import MapView from "./components/MapView";
 import SettingsPage from "./components/SettingsPage";
@@ -43,6 +46,11 @@ function App() {
   const refreshInFlight = useRef(false);
   /** 防抖标记：防止并发触发 heartbeat */
   const heartbeatInFlight = useRef(false);
+  /** 关闭流程标记：避免重复触发退出逻辑 */
+  const closingRef = useRef(false);
+  /** Ref：始终指向最新的 localStatus，供事件回调使用，避免闭包捕获过时值 */
+  const localStatusRef = useRef(localStatus);
+  localStatusRef.current = localStatus;
 
   // ───────── 初始化：加载或生成终端 ID ─────────
 
@@ -90,6 +98,8 @@ function App() {
   const onlineComputedTerminals = useMemo(() => computedTerminals.filter((t) => t.computedOnline), [computedTerminals]);
   /** 是否存在任何终端数据（控制终端列表和地图区域的显隐） */
   const hasTerminalData = computedTerminals.length > 0;
+  /** 当前设备是否允许查看在线终端 */
+  const canViewOnline = localStatus === "online";
   /** 在线且携带 GPS 坐标的终端，传给 MapView 组件在地图上打点 */
   const mapTerminals = useMemo(() => onlineTerminals.filter((t) => t.gps), [onlineTerminals]);
 
@@ -177,6 +187,7 @@ function App() {
    * - 使用 heartbeatInFlight 防止并发
    * - 若远程已有该终端记录则增量更新，否则构建最小化记录写入
    */
+  // @ts-ignore
   async function heartbeat() {
     if (!terminalId) return;
     if (heartbeatInFlight.current) return;
@@ -227,7 +238,11 @@ function App() {
     setLocalStatus("offline");
   }
 
-  // ───────── 定时任务 ─────────
+  /** Ref：始终指向最新的 exit 函数，避免闭包捕获过时引用 */
+  const exitRef = useRef(exit);
+  exitRef.current = exit;
+
+  // ───────── 定时任务（已暂时屏蔽） ─────────
 
   /**
    * 定时轮询远程数据
@@ -236,9 +251,8 @@ function App() {
    */
   useEffect(() => {
     void pullStore();
-    const t = window.setInterval(() => void pullStore(), settings.refreshSeconds * 1000);
-    return () => window.clearInterval(t);
-  }, [settings.refreshSeconds, giteeCfg.gistId, giteeCfg.fileName, giteeCfg.accessToken]);
+    // 轮询功能暂时屏蔽，保留首次拉取
+  }, [giteeCfg.gistId, giteeCfg.fileName, giteeCfg.accessToken]);
 
   /**
    * 心跳定时器：仅在当前设备处于 online 状态时启动
@@ -246,10 +260,54 @@ function App() {
    * 当设备退出或配置变化时清除定时器
    */
   useEffect(() => {
-    if (localStatus !== "online") return;
-    const t = window.setInterval(() => void heartbeat(), 30000);
-    return () => window.clearInterval(t);
+    // 心跳功能暂时屏蔽
   }, [localStatus, giteeCfg.gistId, giteeCfg.fileName, giteeCfg.accessToken, terminalId]);
+
+  /**
+   * 应用退出时将状态设置为离线
+   * - 触发场景：页面刷新/关闭、Tauri 窗口关闭
+   */
+  useEffect(() => {
+    const handleExit = () => {
+      if (localStatusRef.current === "online" && !closingRef.current) {
+        closingRef.current = true;
+        void exitRef.current();
+      }
+    };
+    window.addEventListener("beforeunload", handleExit);
+    window.addEventListener("unload", handleExit);
+    return () => {
+      window.removeEventListener("beforeunload", handleExit);
+      window.removeEventListener("unload", handleExit);
+    };
+  }, []);
+
+  /**
+   * Tauri 侧关闭拦截：尽量确保离线写入完成后再关闭窗口
+   */
+  useEffect(() => {
+    let unlisten: null | (() => void) = null;
+    const setup = async () => {
+      if (!(window as Window & { __TAURI__?: unknown }).__TAURI__) return;
+      const win = getCurrentWindow();
+      unlisten = await listen("app-closing", async () => {
+        if (closingRef.current) return;
+        closingRef.current = true;
+        try {
+          if (localStatusRef.current === "online") {
+            await exitRef.current();
+          }
+        } finally {
+          await invoke("allow_app_close");
+          await win.close();
+        }
+      });
+    };
+    void setup();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // ───────── 页面渲染 ─────────
 
@@ -312,7 +370,7 @@ function App() {
           </div>
 
           {/* 以下区域仅在有终端数据时显示 */}
-          {hasTerminalData && (
+          {hasTerminalData && canViewOnline && (
             <>
               {/* 在线终端卡片列表 */}
               <div className="card span2">
@@ -371,6 +429,15 @@ function App() {
                 }
               </div>
             </>
+          )}
+
+          {hasTerminalData && !canViewOnline && (
+            <div className="card span2">
+              <div className="row spread">
+                <h2>在线终端</h2>
+              </div>
+              <div className="muted">当前设备离线，无法查看在线设备列表。</div>
+            </div>
           )}
         </section>
 
