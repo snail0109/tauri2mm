@@ -18,10 +18,10 @@
 本地创建 `.env`，字段参考 `.env.example`。
 
 2. 安装依赖
-`npm install`
+`pnpm install`
 
 3. 运行开发环境或打包
-开发：`npm run tauri android dev`；打包：`npm run tauri android build`。
+开发：`pnpm run tauri android dev`；打包：`pnpm run tauri android build`。
 
 4. Android 签名说明
 `src-tauri/gen/android/app/build.gradle.kts` 中引用了 `keystore.properties`。
