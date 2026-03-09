@@ -6,13 +6,11 @@
 
 1. 多终端在线管理：通过 Gitee Gist 统一存储 `TerminalStore`，实现多设备在线状态共享；本地缓存远程数据，启动优先从缓存恢复，拉取成功后写回缓存。
 
-2. 终端加入/退出与心跳：`Join` 获取当前 GPS 并写入远程；`Exit` 将当前终端标记为离线并更新 `last_update`；在线状态下每 30 秒更新 GPS 与 `last_update` 作为心跳续约。
+2. 终端加入/退出与刷新：`Join` 获取当前 GPS 并写入远程；`Exit` 将当前终端标记为离线并更新 `last_update`；在线状态下刷新会更新 GPS 与 `last_update` 作为心跳续约。
 
-3. 定时拉取与在线判定：启动立即拉取一次，随后按 `refreshSeconds` 周期轮询远程仓库；在线判定规则为 `status === "online"` 且 `now - last_update <= onlineTimeoutMinutes`。
+3. 可视化与状态提示：在线终端列表展示平台、型号、CPU、内存、GPS 与最后更新时间；地图分布仅展示“在线且有 GPS”的终端（高德地图）；顶部横幅提示同步成功或错误信息。
 
-4. 可视化与状态提示：在线终端列表展示平台、型号、CPU、内存、GPS 与最后更新时间；地图分布仅展示“在线且有 GPS”的终端（高德地图）；顶部横幅提示同步成功或错误信息。
-
-5. 设置页：支持配置 Gitee 凭证、Gist 信息、刷新频率、在线超时、高德地图 Key 等；默认值为 `refreshSeconds = 10`（秒）、`onlineTimeoutMinutes = 60`（分钟）。
+4. 设置页：支持配置 Gitee 凭证、Gist 信息、高德地图 Key 等；
 
 ## 本地编译
 
@@ -20,10 +18,7 @@
 本地创建 `.env`，字段参考 `.env.example`。
 
 2. 安装依赖
-
-```bash
-npm install
-```
+`npm install`
 
 3. 运行开发环境或打包
 开发：`npm run tauri android dev`；打包：`npm run tauri android build`。
@@ -44,3 +39,17 @@ storeFile=/Users/yourname/usermgr-keystore.jks
 keyAlias=usermgr
 password=your_keystore_password
 ```
+
+## github action
+
+### Repository secrets
+
+对应本地的 keystore.properties 配置文件
+
+- ANDROID_KEY_ALIAS - keyAlias
+- ANDROID_KEY_PASSWORD - password
+- ANDROID_KEY_BASE64 -  `base64 -i storeFile`
+- VITE_GITEE_ACCESS_TOKEN
+- VITE_GITEE_GIST_ID
+- VITE_AMAP_KEY
+- VITE_AMAP_SECURITY_CODE
