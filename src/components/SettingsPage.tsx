@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { UserSettings } from "../lib/storage";
 import { loadUserSettings, saveUserSettings, loadSettings, defaultSettings } from "../lib/storage";
 import type { Settings } from "../lib/types";
 import { testGiteeConfig } from "../lib/gitee";
 import { testAmapConfig } from "../lib/amap";
+import { logAction, logError, logTask, logWarn } from "../lib/logger";
 import "./SettingsPage.css";
 
 interface SettingsPageProps {
@@ -17,7 +18,15 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
   const [giteeTest, setGiteeTest] = useState<{ status: TestStatus; msg?: string }>({ status: "idle" });
   const [amapTest, setAmapTest] = useState<{ status: TestStatus; msg?: string }>({ status: "idle" });
 
+  useEffect(() => {
+    logTask("settings.page.enter");
+  }, []);
+
   function handleSave() {
+    logAction("settings.save.click", {
+      hasUserGitee: !!(draft.giteeAccessToken && draft.giteeGistId),
+      hasUserAmap: !!(draft.amapKey && draft.amapSecurityCode),
+    });
     saveUserSettings(draft);
     onBack(loadSettings());
   }
@@ -44,8 +53,10 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
   }
 
   async function handleTestGitee() {
+    logAction("settings.test-gitee.click");
     const cfg = resolveGiteeConfig();
     if (!cfg.accessToken || !cfg.gistId) {
+      logWarn("settings.test-gitee.skip.missing-config");
       setGiteeTest({ status: "error", msg: "Token 和 Gist ID 需同时配置" });
       return;
     }
@@ -53,14 +64,18 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
     try {
       await testGiteeConfig(cfg);
       setGiteeTest({ status: "success", msg: "连接成功" });
+      logTask("settings.test-gitee.success");
     } catch (e) {
+      logError("settings.test-gitee.failed", e);
       setGiteeTest({ status: "error", msg: e instanceof Error ? e.message : "测试失败" });
     }
   }
 
   async function handleTestAmap() {
+    logAction("settings.test-amap.click");
     const cfg = resolveAmapConfig();
     if (!cfg.key || !cfg.securityCode) {
+      logWarn("settings.test-amap.skip.missing-config");
       setAmapTest({ status: "error", msg: "Key 和安全码需同时配置" });
       return;
     }
@@ -68,7 +83,9 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
     try {
       await testAmapConfig(cfg);
       setAmapTest({ status: "success", msg: "连接成功" });
+      logTask("settings.test-amap.success");
     } catch (e) {
+      logError("settings.test-amap.failed", e);
       setAmapTest({ status: "error", msg: e instanceof Error ? e.message : "测试失败" });
     }
   }
@@ -76,7 +93,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
   return (
     <div className="settingsPage">
       <div className="settingsHeader">
-        <div className="backBtn" onClick={() => onBack()}>
+        <div className="backBtn" onClick={() => { logAction("settings.back.click"); onBack(); }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 12H5"/>
             <path d="M12 19l-7-7 7-7"/>
@@ -90,7 +107,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
         <div className="sectionTitle">
           Gitee 配置
           {(draft.giteeAccessToken || draft.giteeGistId) && (
-            <span className="clearBtn" onClick={() => { setDraft((d) => ({ ...d, giteeAccessToken: "", giteeGistId: "" })); setGiteeTest({ status: "idle" }); }} title="清空 Gitee 配置">
+            <span className="clearBtn" onClick={() => { logAction("settings.gitee.clear.click"); setDraft((d) => ({ ...d, giteeAccessToken: "", giteeGistId: "" })); setGiteeTest({ status: "idle" }); }} title="清空 Gitee 配置">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
             </span>
           )}
@@ -129,7 +146,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
         <div className="sectionTitle">
           高德地图配置
           {(draft.amapKey || draft.amapSecurityCode) && (
-            <span className="clearBtn" onClick={() => { setDraft((d) => ({ ...d, amapKey: "", amapSecurityCode: "" })); setAmapTest({ status: "idle" }); }} title="清空高德地图配置">
+            <span className="clearBtn" onClick={() => { logAction("settings.amap.clear.click"); setDraft((d) => ({ ...d, amapKey: "", amapSecurityCode: "" })); setAmapTest({ status: "idle" }); }} title="清空高德地图配置">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
             </span>
           )}
@@ -163,7 +180,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
 
         <div className="row" style={{ marginTop: 14 }}>
           <button onClick={handleSave} style={{ backgroundColor: "#007bff", color: "#fff" }}>保存</button>
-          <button onClick={() => onBack()}>取消</button>
+          <button onClick={() => { logAction("settings.cancel.click"); onBack(); }}>取消</button>
         </div>
       </div>
     </div>

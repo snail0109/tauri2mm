@@ -7,6 +7,7 @@ import MapView from "./components/MapView";
 import SettingsPage from "./components/SettingsPage";
 import { buildTerminalInfo, getCurrentGps } from "./lib/device";
 import { emptyStore, fetchStore, saveStore } from "./lib/gitee";
+import { logAction, logError, logTask, logWarn } from "./lib/logger";
 import { defaultSettings, loadCachedStore, loadOrCreateTerminalId, loadSettings, saveCachedStore } from "./lib/storage";
 import type { Gps, TerminalInfo, TerminalStatus, TerminalStore } from "./lib/types";
 
@@ -55,7 +56,15 @@ function App() {
   // ───────── 初始化：加载或生成终端 ID ─────────
 
   useEffect(() => {
-    void loadOrCreateTerminalId().then(setTerminalId);
+    logTask("app.init.start");
+    void loadOrCreateTerminalId()
+      .then((id) => {
+        setTerminalId(id);
+        logTask("app.init.terminal-id.ready", { terminalId: id });
+      })
+      .catch((e) => {
+        logError("app.init.terminal-id.failed", e);
+      });
   }, []);
 
   // ───────── 派生数据 ─────────
@@ -112,15 +121,23 @@ function App() {
    * - 同时根据拉取到的数据刷新当前设备的 localStatus
    */
   async function pullStore() {
-    if (refreshInFlight.current) return;
+    if (refreshInFlight.current) {
+      logWarn("store.pull.skip.inflight");
+      return;
+    }
     refreshInFlight.current = true;
     setStoreLoading(true);
     setStoreError(null);
+    logTask("store.pull.start", {
+      hasToken: !!giteeCfg.accessToken,
+      hasGistId: !!giteeCfg.gistId,
+      fileName: giteeCfg.fileName,
+    });
     try {
       const s = await fetchStore(giteeCfg);
       setStore(s);
       saveCachedStore(s);
-      console.log("Pulled store:", s);
+      logTask("store.pull.success", { terminalCount: Object.keys(s.terminals ?? {}).length });
       // 同步当前设备的在线状态到 localStatus
       if (terminalId) {
         const me = s.terminals?.[terminalId];
@@ -128,14 +145,17 @@ function App() {
           const timeoutMs = settings.onlineTimeoutMinutes * 60_000;
           const online = isComputedOnline(me, timeoutMs, Date.now());
           setLocalStatus(online ? "online" : "offline");
+          logTask("store.pull.local-status.synced", { localStatus: online ? "online" : "offline" });
         }
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to fetch store";
       setStoreError(msg);
+      logError("store.pull.failed", e, { message: msg });
     } finally {
       setStoreLoading(false);
       refreshInFlight.current = false;
+      logTask("store.pull.end");
     }
   }
 
@@ -147,6 +167,7 @@ function App() {
    */
   async function withMergedStore(update: (s: TerminalStore) => TerminalStore) {
     setStoreError(null);
+    logTask("store.merge.start");
     try {
       const latest = await fetchStore(giteeCfg);
       const next = update(latest);
@@ -154,10 +175,12 @@ function App() {
       setStore(next);
       saveCachedStore(next);
       setSyncNote(`Synced at ${new Date().toLocaleTimeString()}`);
+      logTask("store.merge.success", { terminalCount: Object.keys(next.terminals ?? {}).length });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Sync failed";
       setStoreError(msg);
       setSyncNote(null);
+      logError("store.merge.failed", e, { message: msg });
     }
   }
 
@@ -166,6 +189,7 @@ function App() {
    */
   function onNativeGpsUpdate(nativeGps: NonNullable<Gps>) {
     if (!terminalId) return;
+    logTask("gps.native.update", { lat: nativeGps.lat, lng: nativeGps.lng });
     void withMergedStore((s) => {
       const existing = s.terminals?.[terminalId];
       if (!existing || existing.status !== "online") return s;
@@ -184,20 +208,29 @@ function App() {
    * 高德定位返回后立即上报，原生定位在后台静默更新
    */
   async function join() {
-    if (!terminalId) return;
-    const gps = await getCurrentGps(8000, onNativeGpsUpdate);
-    const info = await buildTerminalInfo({
-      terminalId,
-      status: "online",
-      gps,
-    });
-    await withMergedStore((s) => ({
-      terminals: {
-        ...(s.terminals ?? {}),
-        [terminalId]: info,
-      },
-    }));
-    setLocalStatus("online");
+    if (!terminalId) {
+      logWarn("join.skip.no-terminal-id");
+      return;
+    }
+    logTask("join.start", { terminalId });
+    try {
+      const gps = await getCurrentGps(8000, onNativeGpsUpdate);
+      const info = await buildTerminalInfo({
+        terminalId,
+        status: "online",
+        gps,
+      });
+      await withMergedStore((s) => ({
+        terminals: {
+          ...(s.terminals ?? {}),
+          [terminalId]: info,
+        },
+      }));
+      setLocalStatus("online");
+      logTask("join.success", { terminalId, hasGps: !!gps });
+    } catch (e) {
+      logError("join.failed", e, { terminalId });
+    }
   }
 
   /**
@@ -208,9 +241,16 @@ function App() {
    */
   // @ts-ignore
   async function heartbeat() {
-    if (!terminalId) return;
-    if (heartbeatInFlight.current) return;
+    if (!terminalId) {
+      logWarn("heartbeat.skip.no-terminal-id");
+      return;
+    }
+    if (heartbeatInFlight.current) {
+      logWarn("heartbeat.skip.inflight");
+      return;
+    }
     heartbeatInFlight.current = true;
+    logTask("heartbeat.start", { terminalId });
     try {
       const gps = await getCurrentGps(8000, onNativeGpsUpdate);
       const iso = new Date().toISOString();
@@ -232,8 +272,12 @@ function App() {
         return { terminals: { ...(s.terminals ?? {}), [terminalId]: next } };
       });
       setLocalStatus("online");
+      logTask("heartbeat.success", { terminalId, hasGps: !!gps });
+    } catch (e) {
+      logError("heartbeat.failed", e, { terminalId });
     } finally {
       heartbeatInFlight.current = false;
+      logTask("heartbeat.end");
     }
   }
 
@@ -241,10 +285,12 @@ function App() {
    * 手动刷新：拉取最新远程数据，若当前设备在线则同时更新 GPS 位置
    */
   async function refreshAll() {
+    logTask("refresh-all.start");
     await pullStore();
     if (localStatusRef.current === "online" && terminalId) {
       await heartbeat();
     }
+    logTask("refresh-all.end", { localStatus: localStatusRef.current });
   }
 
   /**
@@ -255,7 +301,11 @@ function App() {
    *   2. 降级路径：基于本地缓存数据直接 save
    */
   async function exit() {
-    if (!terminalId) return;
+    if (!terminalId) {
+      logWarn("exit.skip.no-terminal-id");
+      return;
+    }
+    logTask("exit.start", { terminalId });
     const iso = new Date().toISOString();
 
     const applyOffline = (s: TerminalStore): TerminalStore => {
@@ -277,8 +327,10 @@ function App() {
       setStore(next);
       saveCachedStore(next);
       setLocalStatus("offline");
+      logTask("exit.success.primary");
       return;
-    } catch {
+    } catch (e) {
+      logWarn("exit.primary.failed.fallback", { error: e instanceof Error ? e.message : String(e) });
       // 正常路径失败（网络异常等），降级使用本地缓存
     }
 
@@ -288,10 +340,13 @@ function App() {
       await saveStore(giteeCfg, next);
       setStore(next);
       saveCachedStore(next);
-    } catch {
+      logTask("exit.success.fallback");
+    } catch (e) {
+      logError("exit.fallback.failed", e);
       // 降级也失败，放弃
     }
     setLocalStatus("offline");
+    logTask("exit.end", { terminalId });
   }
 
   /** Ref：始终指向最新的 exit 函数，避免闭包捕获过时引用 */
@@ -306,6 +361,11 @@ function App() {
    * 依赖项变化（刷新频率或 Gitee 配置改变）时重新启动定时器
    */
   useEffect(() => {
+    logTask("store.pull.on-config-change", {
+      hasToken: !!giteeCfg.accessToken,
+      hasGistId: !!giteeCfg.gistId,
+      fileName: giteeCfg.fileName,
+    });
     void pullStore();
     // 轮询功能暂时屏蔽，保留首次拉取
   }, [giteeCfg.gistId, giteeCfg.fileName, giteeCfg.accessToken]);
@@ -325,6 +385,7 @@ function App() {
    */
   useEffect(() => {
     const handleExit = () => {
+      logTask("window.unload.triggered", { localStatus: localStatusRef.current });
       if (localStatusRef.current === "online" && !closingRef.current) {
         closingRef.current = true;
         void exitRef.current();
@@ -345,8 +406,10 @@ function App() {
     let unlisten: null | (() => void) = null;
     const setup = async () => {
       if (!(window as Window & { __TAURI__?: unknown }).__TAURI__) return;
+      logTask("tauri.close-hook.setup");
       const win = getCurrentWindow();
       unlisten = await listen("app-closing", async () => {
+        logTask("tauri.close-hook.received");
         if (closingRef.current) return;
         closingRef.current = true;
         try {
@@ -355,6 +418,7 @@ function App() {
           }
         } finally {
           await invoke("allow_app_close");
+          logTask("tauri.close-hook.allow-close");
           await win.close();
         }
       });
@@ -372,6 +436,7 @@ function App() {
     return (
       <div className="app">
         <SettingsPage onBack={(newSettings) => {
+          logAction("settings.back", { hasNewSettings: !!newSettings });
           if (newSettings) setSettings(newSettings);
           setPage("main");
         }} />
@@ -387,7 +452,7 @@ function App() {
           <div className="brandTitle">多终端在线管理</div>
         </div>
         {/* 设置按钮（齿轮图标） */}
-        <div className="settingsBtn" onClick={() => setPage("settings")}>
+        <div className="settingsBtn" onClick={() => { logAction("settings.open"); setPage("settings"); }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -408,11 +473,11 @@ function App() {
           <div className="card">
             <div className="row">
               {/* 加入按钮：需要 terminalId 和 Gitee 配置就绪才可用 */}
-              <button onClick={() => void join()} disabled={storeLoading || !terminalId || !settings.giteeAccessToken || !settings.giteeGistId}>
+              <button onClick={() => { logAction("click.join"); void join(); }} disabled={storeLoading || !terminalId || !settings.giteeAccessToken || !settings.giteeGistId}>
                 加入（Join）
               </button>
               {/* 退出按钮：需要当前设备在线或远程存在该终端记录 */}
-              <button onClick={() => void exit()} disabled={storeLoading || (localStatus !== "online" && !store.terminals?.[terminalId ?? ""])}>
+              <button onClick={() => { logAction("click.exit"); void exit(); }} disabled={storeLoading || (localStatus !== "online" && !store.terminals?.[terminalId ?? ""])}>
                 退出（Exit）
               </button>
             </div>
@@ -434,7 +499,7 @@ function App() {
                   <h2>在线终端</h2>
                   <div className="row">
                     {/* 手动刷新按钮：拉取最新数据，若在线则同时更新本机 GPS */}
-                    <button onClick={() => void refreshAll()} disabled={storeLoading}>
+                    <button onClick={() => { logAction("click.refresh"); void refreshAll(); }} disabled={storeLoading}>
                       {storeLoading ? "刷新中…" : "刷新"}
                     </button>
                   </div>
