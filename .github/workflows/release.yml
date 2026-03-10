@@ -132,12 +132,12 @@ jobs:
           
           # 构建 universal release APK
           apk_path=src-tauri/gen/android/app/build/outputs/apk/universal/release
-          universal_apk=tauri2mm_${version}_universal.apk
+          universal_apk=mytest_${version}_universal.apk
           pnpm tauri android build
           cp ${apk_path}/app-universal-release.apk $universal_apk
 
           # 构建 arm64 release APK
-          arm64_apk=tauri2mm_${version}_arm64.apk
+          arm64_apk=mytest_${version}_arm64.apk
           pnpm tauri android build -t aarch64
           cp ${apk_path}/app-universal-release.apk $arm64_apk
 
@@ -160,14 +160,14 @@ jobs:
             ## Android Release ${{ env.RELEASE_VERSION }}
             
             ### APK Files
-            - **Universal APK**: `tauri2mm_${{ env.PACKAGE_VERSION }}_universal.apk`
-            - **ARM64 APK**: `tauri2mm_${{ env.PACKAGE_VERSION }}_arm64.apk`
+            - **Universal APK**: `mytest_${{ env.PACKAGE_VERSION }}_universal.apk`
+            - **ARM64 APK**: `mytest_${{ env.PACKAGE_VERSION }}_arm64.apk`
             
             ### Installation
             Download the appropriate APK file for your device architecture and install it.
           files: |
-            tauri2mm_${{ env.PACKAGE_VERSION }}_universal.apk
-            tauri2mm_${{ env.PACKAGE_VERSION }}_arm64.apk
+            mytest_${{ env.PACKAGE_VERSION }}_universal.apk
+            mytest_${{ env.PACKAGE_VERSION }}_arm64.apk
           draft: false
           prerelease: false
         env:
