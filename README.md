@@ -29,14 +29,14 @@
 若本地无签名文件，可先生成 keystore（示例）：
 
 ```bash
-keytool -genkey -v -keystore ~/usermgr-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias usermgr
+keytool -genkey -v -keystore ~/mytest-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mytest
 ```
 
 `keystore.properties` 示例（与上面的 `keytool` 对应）：
 
 ```properties
-storeFile=/Users/yourname/usermgr-keystore.jks
-keyAlias=usermgr
+storeFile=/Users/yourname/mytest-keystore.jks
+keyAlias=mytest
 password=your_keystore_password
 ```
 

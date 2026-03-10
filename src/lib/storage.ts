@@ -2,9 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Settings, TerminalStore } from "./types";
 
 // 本地存储 key（版本化便于后续迁移）
-const TERMINAL_ID_KEY = "usermgr.terminalId.v1";
-const STORE_CACHE_KEY = "usermgr.storeCache.v1";
-const USER_SETTINGS_KEY = "usermgr.userSettings.v1";
+const TERMINAL_ID_KEY = "mytest.terminalId.v1";
+const STORE_CACHE_KEY = "mytest.storeCache.v1";
+const USER_SETTINGS_KEY = "mytest.userSettings.v1";
 
 // 用户可自定义的设置字段
 export type UserSettings = {
