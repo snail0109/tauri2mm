@@ -12,33 +12,50 @@
 
 4. 设置页：支持配置 Gitee 凭证、Gist 信息、高德地图 Key 等；
 
-## 本地编译
+## 本地桌面端开发
 
-1. 环境变量
-本地创建 `.env`，字段参考 `.env.example`。
+### mac
 
-2. 安装依赖
+`./dev-mac.sh`
+
+### linux
+
+`./dev-linux.sh`
+
+### windows
+
+`.\dev-windows.bat`
+
+## 本地安卓移动端开发
+
+1. 安装依赖
 `pnpm install`
+
+2. 初始化安卓环境
+`pnpm tauri android init`
+`src-tauri/gen/android/app/build.gradle.kts`  文件需要获取 git 仓库上的替换本地自动生成的
 
 3. 运行开发环境或打包
 开发：`pnpm run tauri android dev`；打包：`pnpm run tauri android build`。
 
 4. Android 签名说明
-`src-tauri/gen/android/app/build.gradle.kts` 中引用了 `keystore.properties`。
+新建文件 `src-tauri/gen/android/keystore.properties`
 
-若本地无签名文件，可先生成 keystore（示例）：
+```properties
+keyAlias=mytest
+password=your_keystore_password
+storeFile=/Users/yourname/mytest-keystore.jks
+```
+
+生成 keystore（示例）：
 
 ```bash
 keytool -genkey -v -keystore ~/mytest-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mytest
 ```
 
-`keystore.properties` 示例（与上面的 `keytool` 对应）：
-
-```properties
-storeFile=/Users/yourname/mytest-keystore.jks
-keyAlias=mytest
-password=your_keystore_password
-```
+`keyAlias` 就是 `mytest`
+生成过程会需要输入密码，生成完成替换 `your_keystore_password`
+`storeFile` 替换成生成的文件地址
 
 ## github action
 
