@@ -2,6 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use reqwest::StatusCode;
+use serde::Serialize;
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Manager, State};
@@ -25,6 +26,26 @@ fn build_device_id() -> String {
 #[tauri::command]
 fn get_device_id() -> String {
     build_device_id()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformInfo {
+    os: String,
+    is_mobile: bool,
+    is_desktop: bool,
+}
+
+/// Tauri 命令：返回当前运行平台信息（含是否移动端）。
+#[tauri::command]
+fn get_platform_info() -> PlatformInfo {
+    let os = std::env::consts::OS.to_string();
+    let is_mobile = matches!(os.as_str(), "android" | "ios");
+    PlatformInfo {
+        os,
+        is_mobile,
+        is_desktop: !is_mobile,
+    }
 }
 
 /// 关闭守卫：用于在完成清理后允许窗口真正关闭。
@@ -192,6 +213,7 @@ pub fn run() {
         .plugin(tauri_plugin_geolocation::init())
         .invoke_handler(tauri::generate_handler![
             get_device_id,
+            get_platform_info,
             allow_app_close,
             gitee_get_gist_file,
             gitee_update_gist_file

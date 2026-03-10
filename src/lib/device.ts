@@ -1,6 +1,7 @@
 import { checkPermissions, requestPermissions, getCurrentPosition } from "@tauri-apps/plugin-geolocation";
 import type { Gps, TerminalInfo } from "./types";
 import { getAmapPosition } from "./amap";
+import { getPlatformInfo } from "./platform";
 
 /**
  * 确保定位权限已授予（Android 需要运行时请求）。
@@ -68,15 +69,23 @@ export async function getCurrentGps(
   return amapGps;
 }
 
-// 根据 UA 推断平台名称
-export function getPlatformLabel(): string {
-  const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes("android")) return "Android";
-  if (ua.includes("iphone") || ua.includes("ipad")) return "iOS";
-  if (ua.includes("windows")) return "Windows";
-  if (ua.includes("mac os")) return "macOS";
-  if (ua.includes("linux")) return "Linux";
-  return "Unknown";
+// 优先使用 Tauri 后端平台信息，失败时回退 UA 推断。
+export async function getPlatformLabel(): Promise<string> {
+  const platform = await getPlatformInfo();
+  switch (platform.os.toLowerCase()) {
+    case "android":
+      return "Android";
+    case "ios":
+      return "iOS";
+    case "windows":
+      return "Windows";
+    case "macos":
+      return "macOS";
+    case "linux":
+      return "Linux";
+    default:
+      return "Unknown";
+  }
 }
 
 // 截断过长 UA，作为设备型号描述
@@ -91,6 +100,7 @@ export async function buildTerminalInfo(input: {
   status: TerminalInfo["status"];
   gps: Gps;
 }): Promise<TerminalInfo> {
+  const platformLabel = await getPlatformLabel();
   const cores = typeof navigator.hardwareConcurrency === "number" ? `${navigator.hardwareConcurrency} cores` : "unknown";
   const memory =
     typeof (navigator as Navigator & { deviceMemory?: number }).deviceMemory === "number"
@@ -99,7 +109,7 @@ export async function buildTerminalInfo(input: {
 
   return {
     terminal_id: input.terminalId,
-    platform: getPlatformLabel(),
+    platform: platformLabel,
     device_model: getDeviceModelLabel(),
     cpu: cores,
     memory,
